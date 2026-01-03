@@ -1,4 +1,9 @@
-# 🚀 LinkedIn Automation Proof-of-Concept (Go-Based)
+https://www.loom.com/share/5caf7a950de744b69d4079c1a772ea37
+ 
+ 
+ 
+ 
+ # 🚀 LinkedIn Automation Proof-of-Concept (Go-Based)
 
 A sophisticated automation engine built with **Golang** and the **Rod** library. This project focuses on high-level stealth engineering, anti-detection techniques, and persistent state management to simulate human-like networking activity.
 
