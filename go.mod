@@ -5,7 +5,6 @@ go 1.25.5
 require (
 	github.com/glebarez/go-sqlite v1.22.0
 	github.com/go-rod/rod v0.116.2
-	github.com/go-rod/stealth v0.4.9
 	github.com/joho/godotenv v1.5.1
 	github.com/mattn/go-sqlite3 v1.14.16
 )

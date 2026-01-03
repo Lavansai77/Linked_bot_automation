@@ -1,85 +1,68 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"os"
 
 	"github.com/Lavansai77/Linked-in-bot/internal/actions"
 	"github.com/Lavansai77/Linked-in-bot/internal/auth"
 	"github.com/Lavansai77/Linked-in-bot/internal/stealth"
-	"github.com/Lavansai77/Linked-in-bot/internal/storage"
-
 	"github.com/go-rod/rod"
-	"github.com/go-rod/rod/lib/launcher" // Added this import
 	"github.com/joho/godotenv"
 )
 
 func main() {
-	// 1. Load environment variables
+	// 1. Load Environment
 	if err := godotenv.Load(); err != nil {
-		log.Println("Note: .env file not found, using system environment variables")
+		log.Fatal("Error loading .env file")
 	}
 
-	// 2. Initialize Persistent Storage (SQLite)
-	storage.InitDB()
-
-	// 3. Initialize Browser with Launcher to avoid Windows Defender "leakless" error
-	// .Leakless(false) prevents the creation of the .exe that Defender flags
-	l := launcher.New().
-		Leakless(false).
-		Headless(false). // Set to true if you want it to run in the background
-		MustLaunch()
-
-	browser := rod.New().ControlURL(l).MustConnect()
+	// 2. Initialize Browser with Stealth Launcher
+	// auth.Launcher is now defined in auth.go
+	browser := rod.New().ControlURL(auth.Launcher()).MustConnect()
 	defer browser.MustClose()
 
-	// 4. Initialize Stealth Page
-	page := stealth.InitializePage(browser)
+	page := browser.MustPage()
 
-	// 5. Authentication
-	email := os.Getenv("LINKEDIN_EMAIL")
-	pass := os.Getenv("LINKEDIN_PASSWORD")
-
-	log.Println("Step 1: Starting Authentication...")
-	if err := auth.Login(page, email, pass); err != nil {
-		log.Fatalf("Critical Error during login: %v", err)
+	// 3. Perform Authentication
+	fmt.Println("🔑 Checking Authentication Status...")
+	if err := auth.Login(page, os.Getenv("LINKEDIN_EMAIL"), os.Getenv("LINKEDIN_PASSWORD")); err != nil {
+		log.Fatalf("Login failed: %v", err)
 	}
 
-	// 6. Search & Scrape
-	searchKeyword := "Software Engineer"
-	targetLimit := 3
-	log.Printf("Step 2: Searching for '%s' (Limit: %d)...", searchKeyword, targetLimit)
+	// 4. Search and Collect
+	keyword := "Software Recruiter"
+	fmt.Printf("🔍 Searching for keyword: %s\n", keyword)
+	profiles := actions.SearchAndCollect(page, keyword, 3) // Target 3 for a quick video demo
 
-	profiles := actions.SearchAndCollect(page, searchKeyword, targetLimit)
+	if len(profiles) == 0 {
+		fmt.Println("❌ No profiles found. LinkedIn might be blocking the search or selectors changed.")
+		return
+	}
 
-	// 7. Process Connections with Duplicate Prevention
-	log.Println("Step 3: Processing profiles with personalized notes...")
-	for _, url := range profiles {
-		// Check SQLite if we've handled this person before
-		if storage.WasContacted(url) {
-			log.Printf("Skipping [Already Contacted]: %s", url)
-			continue
-		}
+	// 5. Connect Loop
+	fmt.Printf("\n🤝 Found %d profiles. Starting connection sequence...\n", len(profiles))
 
-		log.Printf("Interacting with: %s", url)
+	for i, url := range profiles {
+		fmt.Printf("\n🕒 [%d/%d] Target: %s\n", i+1, len(profiles), url)
 
-		// Personalize your message
-		note := "Hi! I noticed your profile in the Software Engineering space and would love to connect."
+		// Navigate to the profile
+		page.MustNavigate(url)
+		stealth.RandomDelay(3, 6)
 
-		err := actions.SendConnectionRequest(page, url, note)
+		// UPDATED: Changed from ConnectWithProfile to SendConnectionRequest
+		err := actions.SendConnectionRequest(page, url, "Hi, I'd love to connect and learn more about your work!")
+
 		if err != nil {
-			log.Printf("Could not send request to %s: %v", url, err)
-			continue
+			fmt.Printf("⚠️ Skip: %v\n", err)
+		} else {
+			fmt.Println("✨ Success: Connection request sent.")
 		}
 
-		// Save to database only after successful action
-		storage.MarkAsContacted(url)
-		log.Printf("Success! Record saved for: %s", url)
-
-		// Technique: Human-like 'Think Time' between different profiles
-		stealth.RandomDelay(10, 20)
+		// Randomized pause to mimic human reading time
+		stealth.RandomDelay(10, 15)
 	}
 
-	log.Println("Automation Task Complete. Closing browser in 5 seconds...")
-	stealth.RandomDelay(5, 6)
+	fmt.Println("\n🏁 Automation sequence finished successfully.")
 }

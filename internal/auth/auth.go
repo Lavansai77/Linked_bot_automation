@@ -4,54 +4,85 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"time"
 
-	// Updated Import Path
 	"github.com/Lavansai77/Linked-in-bot/internal/stealth"
-
 	"github.com/go-rod/rod"
+	"github.com/go-rod/rod/lib/launcher"
 	"github.com/go-rod/rod/lib/proto"
 )
 
 const cookieFile = "cookies.json"
 
-func Login(page *rod.Page, email, password string) error {
-	if err := loadCookies(page); err == nil {
-		fmt.Println("Reusing existing session...")
-		page.MustNavigate("https://www.linkedin.com/feed/")
-		if !isLoggedIn(page) {
-			fmt.Println("Session expired. Logging in fresh...")
-		} else {
-			return nil
-		}
-	}
+func Launcher() string {
+	l := launcher.New().
+		Headless(false).
+		Devtools(false).
+		Leakless(false)
 
-	fmt.Println("Navigating to login page...")
-	page.MustNavigate("https://www.linkedin.com/login")
+	l.Set("start-maximized")
+	l.Set("no-sandbox", "true")
+	l.Set("disable-infobars", "true")
 
-	// Input email using stealth typing
-	page.MustElement("#username").MustInput("")
-	stealth.TypeLikeHuman(page, email)
-
-	stealth.RandomDelay(1, 2)
-
-	// Input password
-	page.MustElement("#password").MustInput(password)
-
-	// FIX: Calculated Center coordinates manually
-	loginBtn := page.MustElement("button[type=submit]")
-	box := loginBtn.MustShape().Box()
-	stealth.MoveMouseHumanLike(page, box.X+box.Width/2, box.Y+box.Height/2)
-	loginBtn.MustClick()
-
-	fmt.Println("Waiting for dashboard... Please solve any Captchas/2FA manually if they appear.")
-	page.MustWaitIdle()
-
-	return saveCookies(page)
+	fmt.Println("🚀 Launching browser with native window settings...")
+	return l.MustLaunch()
 }
 
-func isLoggedIn(page *rod.Page) bool {
-	has, _, _ := page.Has(".global-nav__me")
-	return has
+func Login(page *rod.Page, email, password string) error {
+	_ = page.SetViewport(nil)
+
+	if err := loadCookies(page); err == nil {
+		fmt.Println("🔄 Session found. Checking authentication status...")
+		page.MustNavigate("https://www.linkedin.com/feed/")
+
+		if waitLoggedIn(page, 5) {
+			fmt.Println("✅ Success: Session restored.")
+			return nil
+		}
+		fmt.Println("❌ Session expired. Proceeding to manual login.")
+	}
+
+	fmt.Println("🌐 Navigating to LinkedIn Login page...")
+	page.MustNavigate("https://www.linkedin.com/login")
+
+	fmt.Println("⌨️ Typing credentials...")
+	page.MustElement("#username").MustWaitVisible().MustInput("")
+	stealth.TypeLikeHuman(page, email)
+
+	page.MustElement("#password").MustWaitVisible().MustInput(password)
+
+	fmt.Println("🖱️ Moving mouse to 'Sign In' button...")
+	loginBtn := page.MustElement("button[type=submit]")
+	box := loginBtn.MustWaitVisible().MustShape().Box()
+	stealth.MoveMouseHumanLike(page, box.X+box.Width/2, box.Y+box.Height/2)
+
+	fmt.Println("✨ Clicked Sign In! Waiting for dashboard to load...")
+	loginBtn.MustClick()
+
+	// Wait for the URL to change away from /login
+	page.MustWaitIdle()
+
+	// Use the new waitLoggedIn function with a 10-second timeout
+	if waitLoggedIn(page, 10) {
+		fmt.Println("🔓 Login Successful! Dashboard reached.")
+		return saveCookies(page)
+	}
+
+	return fmt.Errorf("login failed: layout check timed out (dashboard not found)")
+}
+
+// waitLoggedIn attempts to find the login indicator multiple times before giving up
+func waitLoggedIn(page *rod.Page, timeoutSeconds int) bool {
+	for i := 0; i < timeoutSeconds; i++ {
+		// Look for the navigation bar or the "Me" menu
+		has, _, _ := page.Has(".global-nav__me")
+		if has {
+			return true
+		}
+		// If not found, wait 1 second and try again
+		time.Sleep(1 * time.Second)
+	}
+	return false
 }
 
 func saveCookies(page *rod.Page) error {
@@ -68,7 +99,6 @@ func loadCookies(page *rod.Page) error {
 	if err != nil {
 		return err
 	}
-	// FIX: Use NetworkCookieParam for loading
 	var cookies []*proto.NetworkCookieParam
 	if err := json.Unmarshal(data, &cookies); err != nil {
 		return err
